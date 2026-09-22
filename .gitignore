@@ -1,0 +1,11 @@
+*.o
+*.out
+*.exe
+*.a
+
+build/
+bin/
+
+.vscode/
+*.cmake
+*.code-workspace
