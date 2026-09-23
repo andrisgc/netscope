@@ -9,6 +9,8 @@ private:
     int startPort;
     int endPort;
 
+    void scanRange(int start, int end);
+
 public:
     NetworkScanner(const std::string& ip, int start, int end);
     void scan();

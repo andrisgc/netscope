@@ -3,16 +3,20 @@
 #include <sys/socket.h> // Sockets POSIX
 #include <arpa/inet.h> // Manipulação de IPs e estruturas sockaddr
 #include <unistd.h>
+#include <vector>
+#include <thread>
+#include <mutex>
 
 using namespace std;
+
+// Mutex global para evitar que haja conflitos entre threads no cout
+mutex coutMutex;
 
 NetworkScanner::NetworkScanner(const string& ip, int start, int end)
     : targetIp(ip), startPort(start), endPort(end) {}
 
-void NetworkScanner::scan() {
-    cout << "[*] A iniciar varredura no alvo: " << targetIp << "\n";
-    
-    for (int port = startPort; port <= endPort; ++port) {
+void NetworkScanner::scanRange(int start, int end) {
+    for (int port = start; port <= end; ++port) {
 
         // Pede ao kernel um descritor de rede
         // AF_INET -> Especifica qual o endereçamento IP será utilizado (no nosso caso IPv4)
@@ -38,11 +42,42 @@ void NetworkScanner::scan() {
         int result = connect(sock, (struct sockaddr*)&targetAddr, sizeof(targetAddr));
 
         if (result == 0) {
+            // lock_guard garante que apenas uma thread escreva no terminal por vez
+            lock_guard<mutex> lock(coutMutex);
             cout << "[+] Porta " << port << " - ABERTA\n";
         }
 
         close(sock);
     }
+}
 
-    cout << "[*] Varredura concluída.\n";
+void NetworkScanner::scan() {
+    cout << "[*] A iniciar varredura multithread no alvo: " << targetIp << "\n";
+
+    int totalPorts = (endPort - startPort) + 1;
+    if (totalPorts <= 0) return;
+
+    int numThreads = 4;
+    if (totalPorts < numThreads) {
+        numThreads = totalPorts;
+    }
+
+    int chunkSize = totalPorts / numThreads;
+    vector<thread> threads;
+    threads.reserve(numThreads);
+
+    int currentStart = startPort;
+    for (int i = 0; i < numThreads; ++i) {
+        int currentEnd = (i == numThreads - 1) ? endPort : (currentStart + chunkSize - 1);
+
+        threads.emplace_back(&NetworkScanner::scanRange, this, currentStart, currentEnd);
+    
+        currentStart = currentEnd + 1;
+    }
+
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    cout << "[*] Varredura multithread concluída.\n";
 }
