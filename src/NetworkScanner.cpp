@@ -7,6 +7,7 @@
 #include <thread>
 #include <mutex>
 #include <cstring>
+#include <fcntl.h>
 
 using namespace std;
 
@@ -38,15 +39,41 @@ void NetworkScanner::scanRange(int start, int end) {
         // (Pointer to Network) Converte o IP para binário
         inet_pton(AF_INET, targetIp.c_str(), &targetAddr.sin_addr);
 
+        // Adiciona a flag não-bloqueante no socket
+        int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
         // Handshake TCP
         // (struct sockaddr*)&targetAddr -> Cast de sockaddr_in (IPv4) para sockaddr genérico
-        int result = connect(sock, (struct sockaddr*)&targetAddr, sizeof(targetAddr));
+        connect(sock, (struct sockaddr*)&targetAddr, sizeof(targetAddr));
+
+        // Prepara o select() para monitorar o socket com timeout de 1 segundo
+        fd_set fdWrite;
+        FD_ZERO(&fdWrite);
+        FD_SET(sock, &fdWrite);
+
+        struct timeval timeout;
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+
+        int result = -1;
+
+        if (select(sock + 1, NULL, &fdWrite, NULL, &timeout) > 0) {
+            int so_error;
+            socklen_t len = sizeof(so_error);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+
+            if (so_error == 0) result = 0;
+        }
+
+        fcntl(sock, F_SETFL, flags);
 
         if (result == 0) {
             // Timeout de receção
             struct timeval timeout;
             timeout.tv_sec = 1;
             timeout.tv_usec = 0;
+
             // Configura o socket para ter limite de tempo no receive
             setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
@@ -69,10 +96,10 @@ void NetworkScanner::scanRange(int start, int end) {
 
             // lock_guard garante que apenas uma thread escreva no terminal por vez
             lock_guard<mutex> lock(coutMutex);
-            cout << "[+] Porta " << port << " - ABERTA";
+            std::cout << "[+] Porta " << port << " - ABERTA";
             if (!banner.empty())
-                cout << " (Serviço: " << banner << ")";
-            cout << "\n";
+                std::cout << " (Serviço: " << banner << ")";
+            std::cout << "\n";
         }
 
         close(sock);
@@ -80,7 +107,7 @@ void NetworkScanner::scanRange(int start, int end) {
 }
 
 void NetworkScanner::scan() {
-    cout << "[*] A iniciar varredura multithread no alvo: " << targetIp << "\n";
+    std::cout << "[*] A iniciar varredura multithread no alvo: " << targetIp << "\n";
 
     int totalPorts = (endPort - startPort) + 1;
     if (totalPorts <= 0) return;
@@ -105,5 +132,5 @@ void NetworkScanner::scan() {
     for (auto& t : threads)
         t.join();
 
-    cout << "[*] Varredura multithread concluída.\n";
+    std::cout << "[*] Varredura multithread concluída.\n";
 }
