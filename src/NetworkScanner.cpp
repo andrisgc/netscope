@@ -6,6 +6,7 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <cstring>
 
 using namespace std;
 
@@ -28,7 +29,7 @@ void NetworkScanner::scanRange(int start, int end) {
         }
 
         // Monta o endereço destino
-        sockaddr_in targetAddr;
+        sockaddr_in targetAddr{};
         targetAddr.sin_family = AF_INET;
 
         // (Host to Network Short) Converte o número da porta para a ordem de bytes da rede
@@ -42,9 +43,36 @@ void NetworkScanner::scanRange(int start, int end) {
         int result = connect(sock, (struct sockaddr*)&targetAddr, sizeof(targetAddr));
 
         if (result == 0) {
+            // Timeout de receção
+            struct timeval timeout;
+            timeout.tv_sec = 1;
+            timeout.tv_usec = 0;
+            // Configura o socket para ter limite de tempo no receive
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+            // Prepara memória para receber a resposta
+            char buffer[1024];
+            memset(buffer, 0, sizeof(buffer));
+
+            // Tenta ler o que o serviço tem a dizer
+            int bytesRead = recv(sock, buffer, sizeof(buffer) - 1, 0);
+
+            string banner = "";
+            if (bytesRead > 0) {
+                banner = string(buffer, bytesRead);
+
+                // Pega apenas a primeira linha do texto
+                size_t pos = banner.find('\n');
+                if (pos != string::npos) banner = banner.substr(0, pos);
+                if (!banner.empty() && banner.back() == '\r') banner.pop_back();
+            }
+
             // lock_guard garante que apenas uma thread escreva no terminal por vez
             lock_guard<mutex> lock(coutMutex);
-            cout << "[+] Porta " << port << " - ABERTA\n";
+            cout << "[+] Porta " << port << " - ABERTA";
+            if (!banner.empty())
+                cout << " (Serviço: " << banner << ")";
+            cout << "\n";
         }
 
         close(sock);
@@ -58,9 +86,8 @@ void NetworkScanner::scan() {
     if (totalPorts <= 0) return;
 
     int numThreads = 4;
-    if (totalPorts < numThreads) {
+    if (totalPorts < numThreads)
         numThreads = totalPorts;
-    }
 
     int chunkSize = totalPorts / numThreads;
     vector<thread> threads;
@@ -75,9 +102,8 @@ void NetworkScanner::scan() {
         currentStart = currentEnd + 1;
     }
 
-    for (auto& t : threads) {
+    for (auto& t : threads)
         t.join();
-    }
 
     cout << "[*] Varredura multithread concluída.\n";
 }
