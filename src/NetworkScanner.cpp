@@ -77,6 +77,12 @@ void NetworkScanner::scanRange(int start, int end) {
             // Configura o socket para ter limite de tempo no receive
             setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
+            // Força resposta de serviços e protocolos tímidos
+            if (port == 80 || port == 8080 || port == 443) {
+                string probe = "GET / HTTP/1.1\r\n\r\n";
+                send(sock, probe.c_str(), probe.length(), 0);
+            }
+
             // Prepara memória para receber a resposta
             char buffer[1024];
             memset(buffer, 0, sizeof(buffer));
