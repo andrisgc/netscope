@@ -6,6 +6,8 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <cstring>
+#include <fcntl.h>
 
 using namespace std;
 
@@ -28,7 +30,7 @@ void NetworkScanner::scanRange(int start, int end) {
         }
 
         // Monta o endereço destino
-        sockaddr_in targetAddr;
+        sockaddr_in targetAddr{};
         targetAddr.sin_family = AF_INET;
 
         // (Host to Network Short) Converte o número da porta para a ordem de bytes da rede
@@ -37,14 +39,69 @@ void NetworkScanner::scanRange(int start, int end) {
         // (Pointer to Network) Converte o IP para binário
         inet_pton(AF_INET, targetIp.c_str(), &targetAddr.sin_addr);
 
+        // Adiciona a flag não-bloqueante no socket
+        int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
         // Handshake TCP
         // (struct sockaddr*)&targetAddr -> Cast de sockaddr_in (IPv4) para sockaddr genérico
-        int result = connect(sock, (struct sockaddr*)&targetAddr, sizeof(targetAddr));
+        connect(sock, (struct sockaddr*)&targetAddr, sizeof(targetAddr));
+
+        // Prepara o select() para monitorar o socket com timeout de 1 segundo
+        fd_set fdWrite;
+        FD_ZERO(&fdWrite);
+        FD_SET(sock, &fdWrite);
+
+        // Timeout de receção
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 500000;
+
+        int result = -1;
+
+        if (select(sock + 1, NULL, &fdWrite, NULL, &timeout) > 0) {
+            int so_error;
+            socklen_t len = sizeof(so_error);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+
+            if (so_error == 0) result = 0;
+        }
+
+        fcntl(sock, F_SETFL, flags);
 
         if (result == 0) {
+            // Configura o socket para ter limite de tempo no receive
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+            // Força resposta de serviços e protocolos tímidos
+            if (port == 80 || port == 8080 || port == 443) {
+                string probe = "GET / HTTP/1.1\r\n\r\n";
+                send(sock, probe.c_str(), probe.length(), 0);
+            }
+
+            // Prepara memória para receber a resposta
+            char buffer[1024];
+            memset(buffer, 0, sizeof(buffer));
+
+            // Tenta ler o que o serviço tem a dizer
+            int bytesRead = recv(sock, buffer, sizeof(buffer) - 1, 0);
+
+            string banner = "";
+            if (bytesRead > 0) {
+                banner = string(buffer, bytesRead);
+
+                // Pega apenas a primeira linha do texto
+                size_t pos = banner.find('\n');
+                if (pos != string::npos) banner = banner.substr(0, pos);
+                if (!banner.empty() && banner.back() == '\r') banner.pop_back();
+            }
+
             // lock_guard garante que apenas uma thread escreva no terminal por vez
             lock_guard<mutex> lock(coutMutex);
-            cout << "[+] Porta " << port << " - ABERTA\n";
+            std::cout << "[+] Porta " << port << " - ABERTA";
+            if (!banner.empty())
+                std::cout << " (Serviço: " << banner << ")";
+            std::cout << "\n";
         }
 
         close(sock);
@@ -52,15 +109,14 @@ void NetworkScanner::scanRange(int start, int end) {
 }
 
 void NetworkScanner::scan() {
-    cout << "[*] A iniciar varredura multithread no alvo: " << targetIp << "\n";
+    std::cout << "[*] A iniciar varredura multithread no alvo: " << targetIp << "\n";
 
     int totalPorts = (endPort - startPort) + 1;
     if (totalPorts <= 0) return;
 
     int numThreads = 4;
-    if (totalPorts < numThreads) {
+    if (totalPorts < numThreads)
         numThreads = totalPorts;
-    }
 
     int chunkSize = totalPorts / numThreads;
     vector<thread> threads;
@@ -75,9 +131,8 @@ void NetworkScanner::scan() {
         currentStart = currentEnd + 1;
     }
 
-    for (auto& t : threads) {
+    for (auto& t : threads)
         t.join();
-    }
 
-    cout << "[*] Varredura multithread concluída.\n";
+    std::cout << "[*] Varredura multithread concluída.\n";
 }

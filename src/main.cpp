@@ -12,7 +12,7 @@ bool isIpValid(const string& ip) {
 }
 
 int main(int argc, char* argv[]) {
-    cout << "=== Scanner (C++) ===\n\n";
+    cout << "=== Netscope (C++) ===\n\n";
 
     if (argc != 4) {
         cout << "Modo de uso incorreto.\n";
