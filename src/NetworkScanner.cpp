@@ -52,9 +52,10 @@ void NetworkScanner::scanRange(int start, int end) {
         FD_ZERO(&fdWrite);
         FD_SET(sock, &fdWrite);
 
+        // Timeout de receção
         struct timeval timeout;
-        timeout.tv_sec = 1;
-        timeout.tv_usec = 0;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 500000;
 
         int result = -1;
 
@@ -69,11 +70,6 @@ void NetworkScanner::scanRange(int start, int end) {
         fcntl(sock, F_SETFL, flags);
 
         if (result == 0) {
-            // Timeout de receção
-            struct timeval timeout;
-            timeout.tv_sec = 1;
-            timeout.tv_usec = 0;
-
             // Configura o socket para ter limite de tempo no receive
             setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
