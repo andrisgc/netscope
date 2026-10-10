@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="docs/assets/n2z/png/netscope-c2-lockup-dark-2000.png" alt="Netscope Logo" width="600"><br>
+  <img src="docs/assets/n2z/png/netscope-c2-lockup-dark-transparent-2000.png" alt="Netscope Logo" width="1000"><br>
   Netscope
 </h1>
 
